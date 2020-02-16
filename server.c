@@ -12,6 +12,26 @@
 #include <fcntl.h>
 #include <pthread.h>
 
+#define MAX_BUFFER 1024
+#define MAX_CHATBOXES 10
+typedef struct {
+    char *buffer[MAX_BUFFER];
+    int head, tail;
+    int full, empty;
+} queue;
+
+typedef struct {
+    int socketFd;
+    int clientSockets[MAX_BUFFER];
+    char* clientNames[MAX_BUFFER];
+    int numClients;
+    queue *queue;
+} chatDataVars;
+
+typedef struct {
+    chatDataVars chatBox[MAX_CHATBOXES];
+    char *chatBoxName[MAX_CHATBOXES];
+} chatData;
 
 int main () {
     
