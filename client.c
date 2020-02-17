@@ -14,12 +14,56 @@
 
 #define MAX_BUFFER 1024
 
-void buildMessage(char *result, char *name, char *msg);
-void setupAndConnect(struct sockaddr_in *serverAddr, struct hostent *host, int socketFd, long port);
-void setNonBlock(int fd);
-void interruptHandler(int sig);
 
 static int socketFd;
+
+
+
+//Concatenates the name with the message and puts it into result
+void buildMessage(char *result, char *name, char *msg)
+{
+    memset(result, 0, MAX_BUFFER);
+    strcpy(result, name);
+    strcat(result, ": ");
+    strcat(result, msg);
+}
+
+//Sets up the socket and connects
+void setupAndConnect(struct sockaddr_in *serverAddr, struct hostent *host, int socketFd, long port)
+{
+    memset(serverAddr, 0, sizeof(serverAddr));
+    serverAddr->sin_family = AF_INET;
+    serverAddr->sin_addr = *((struct in_addr *)host->h_addr_list[0]);
+    serverAddr->sin_port = htons(port);
+    if(connect(socketFd, (struct sockaddr *) serverAddr, sizeof(struct sockaddr)) < 0)
+    {
+        perror("Couldn't connect to server");
+        exit(1);
+    }
+}
+
+//Sets the fd to nonblocking
+// used non blocking io here
+// resource: https://github.com/angrave/SystemProgramming/wiki/Networking,-Part-7:-Nonblocking-I-O,-select(),-and-epoll
+void setupNonBlocking(int fd)
+{
+    int flags = fcntl(fd, F_GETFL);
+    if(flags < 0)
+        perror("fcntl failed");
+
+    flags |= O_NONBLOCK;
+    fcntl(fd, F_SETFL, flags);
+}
+
+//Notify the server when the client exits by sending "/exit"
+void interruptHandler(int sig_unused)
+{
+    if(write(socketFd, "/exit\n", MAX_BUFFER - 1) == -1)
+        perror("write failed: ");
+
+    close(socketFd);
+    exit(1);
+}
 
 int main(int argc, char *argv[])
 {
@@ -28,9 +72,9 @@ int main(int argc, char *argv[])
     struct hostent *host;
     long port;
 
-    if(argc != 4)
+    if(argc != 5)
     {
-        fprintf(stderr, "./client [username] [host] [port]\n");
+        fprintf(stderr, "./client [username] [host] [port] [groupId]\n");
         exit(1);
     }
     name = argv[1];
@@ -45,10 +89,13 @@ int main(int argc, char *argv[])
         fprintf(stderr, "Couldn't create socket\n");
         exit(1);
     }
+    char *groupId = argv[4];
 
     setupAndConnect(&serverAddr, host, socketFd, port);
-    setNonBlock(socketFd);
-    setNonBlock(0);
+    setupNonBlocking(socketFd);
+    setupNonBlocking(0);
+
+    write(socketFd, groupId, sizeof(groupId));
 
     //Set a handler for the interrupt signal
     signal(SIGINT, interruptHandler);
@@ -96,49 +143,4 @@ int main(int argc, char *argv[])
             }
         }
     }
-}
-
-
-//Concatenates the name with the message and puts it into result
-void buildMessage(char *result, char *name, char *msg)
-{
-    memset(result, 0, MAX_BUFFER);
-    strcpy(result, name);
-    strcat(result, ": ");
-    strcat(result, msg);
-}
-
-//Sets up the socket and connects
-void setupAndConnect(struct sockaddr_in *serverAddr, struct hostent *host, int socketFd, long port)
-{
-    memset(serverAddr, 0, sizeof(serverAddr));
-    serverAddr->sin_family = AF_INET;
-    serverAddr->sin_addr = *((struct in_addr *)host->h_addr_list[0]);
-    serverAddr->sin_port = htons(port);
-    if(connect(socketFd, (struct sockaddr *) serverAddr, sizeof(struct sockaddr)) < 0)
-    {
-        perror("Couldn't connect to server");
-        exit(1);
-    }
-}
-
-//Sets the fd to nonblocking
-void setNonBlock(int fd)
-{
-    int flags = fcntl(fd, F_GETFL);
-    if(flags < 0)
-        perror("fcntl failed");
-
-    flags |= O_NONBLOCK;
-    fcntl(fd, F_SETFL, flags);
-}
-
-//Notify the server when the client exits by sending "/exit"
-void interruptHandler(int sig_unused)
-{
-    if(write(socketFd, "/exit\n", MAX_BUFFER - 1) == -1)
-        perror("write failed: ");
-
-    close(socketFd);
-    exit(1);
 }
