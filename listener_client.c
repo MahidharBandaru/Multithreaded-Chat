@@ -21,6 +21,7 @@ static int socketFd;
 pthread_t serverThread, inputThread;
 
 char* name;
+const int tMessage = 100;
 
 //Concatenates the name with the message and puts it into result
 void buildMessage(char* result, char* name, char* msg)
@@ -75,7 +76,6 @@ void* readFromServer(void* data)
         struct t_format time = gettime();
 
         msgBuffer[numBytesRead] = '\0';
-        printf("%s\n", msgBuffer);
         long long a, b;
         char buf[256];
         sscanf(msgBuffer, "%lld %lld", &a, &b);
@@ -88,11 +88,10 @@ void* readFromServer(void* data)
         }
         struct t_format msg_gen_time = { a, b };
         long long diff = timediff(msg_gen_time, time);
-        if (n < 10) {
-            // total += diff;
-            // n++;
+        if (n < tMessage) {
+            total += diff;
+            n++;
             // printf("%lld %lld %lld %lld %lld %lld\n", n, a, b, time.s, time.us, diff);
-            // printf("%s\n", msgBuffer);
 
         } else {
             long double avg_delay = (total * 1.0) / n;
@@ -111,12 +110,12 @@ void* writeToServer(void* data)
     char chatBuffer[MAX_BUFFER], msgBuffer[MAX_BUFFER];
 
     while (1) {
-        // usleep(40000);
-        fgets(chatBuffer, MAX_BUFFER - 1, stdin);
+        usleep(40000);
+        // fgets(chatBuffer, MAX_BUFFER - 1, stdin);
         if (strcmp(chatBuffer, "/exit\n") == 0)
             interruptHandler(-1);
         else {
-            // strcpy(chatBuffer, "hi there\n");
+            strcpy(chatBuffer, "hi there\n");
             buildMessage(chatMsg, name, chatBuffer);
             if (write(socketFd, chatMsg, MAX_BUFFER - 1) == -1)
                 perror("write failed: ");
@@ -162,7 +161,7 @@ int main(int argc, char* argv[])
     // main chatloop
     void* data;
     pthread_create(&serverThread, NULL, (void*)&readFromServer, data);
-    pthread_create(&inputThread, NULL, (void*)&writeToServer, data);
+    // pthread_create(&inputThread, NULL, (void*)&writeToServer, data);
     pthread_join(serverThread, NULL);
     return 0;
 }

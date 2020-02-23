@@ -64,7 +64,7 @@ void interruptHandler(int sig_unused)
     close(socketFd);
     pthread_exit(&inputThread);
 }
-long long n = 0, total = 0;
+long long n = 100, total = 0;
 void* readFromServer(void* data)
 {
     char chatMsg[MAX_BUFFER];
@@ -75,7 +75,7 @@ void* readFromServer(void* data)
         struct t_format time = gettime();
 
         msgBuffer[numBytesRead] = '\0';
-        printf("%s\n", msgBuffer);
+        // printf("%s\n", msgBuffer);
         long long a, b;
         char buf[256];
         sscanf(msgBuffer, "%lld %lld", &a, &b);
@@ -89,8 +89,8 @@ void* readFromServer(void* data)
         struct t_format msg_gen_time = { a, b };
         long long diff = timediff(msg_gen_time, time);
         if (n < 10) {
-            // total += diff;
-            // n++;
+            total += diff;
+            n++;
             // printf("%lld %lld %lld %lld %lld %lld\n", n, a, b, time.s, time.us, diff);
             // printf("%s\n", msgBuffer);
 
@@ -161,7 +161,7 @@ int main(int argc, char* argv[])
 
     // main chatloop
     void* data;
-    pthread_create(&serverThread, NULL, (void*)&readFromServer, data);
+    // pthread_create(&serverThread, NULL, (void*)&readFromServer, data);
     pthread_create(&inputThread, NULL, (void*)&writeToServer, data);
     pthread_join(serverThread, NULL);
     return 0;

@@ -11,17 +11,18 @@
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include <signal.h>
 
 #define MAX_BUFFER 1024
 #define MAX_CHATBOXES 3
 
 typedef struct {
-    char* buffer[MAX_BUFFER];
+    uint8_t* buffer[MAX_BUFFER];
     int head, tail;
     int full, empty;
     pthread_mutex_t* mutex;
     pthread_cond_t *notFull, *notEmpty;
-} queue;
+} queue; // per group
 
 typedef struct temp chatData;
 typedef struct {
@@ -31,21 +32,21 @@ typedef struct {
     int numClients;
     pthread_mutex_t* clientListMutex;
     queue* queue;
-    chatData *data;
-} chatDataVars;
+    chatData* data;
+} chatDataVars; // per group
 
 typedef struct {
     chatDataVars* data;
     int clientSocketFd;
-} clientHandlerVars;
+} clientHandlerVars; // per client
 
-typedef struct temp{
-    chatDataVars *chatBox[MAX_CHATBOXES];
+typedef struct temp {
+    chatDataVars* chatBox[MAX_CHATBOXES];
     int socketFd;
     char* chatBoxName[MAX_CHATBOXES];
     int tally;
     pthread_mutex_t* chatBoxListMutex;
-} chatData;
+} chatData; // one for the overall system
 
 void buildMessage(char* result, char* name, char* msg);
 void removeClient(chatDataVars* data, int clientSocketFd);
@@ -113,6 +114,7 @@ char* queuePop(queue* q)
 
 int main(int argc, char* argv[])
 {
+    // signal(SIGPIPE, SIG_IGN);
     struct sockaddr_in serverAddr;
     long port = 9999;
     int socketFd;
@@ -137,7 +139,7 @@ int main(int argc, char* argv[])
     }
 
     // listening on the socket
-    if (listen(socketFd, 1) == -1) {
+    if (listen(socketFd, 100) == -1) {
         perror("listen failed: ");
         exit(1);
     }
@@ -159,19 +161,21 @@ int main(int argc, char* argv[])
     close(socketFd);
 }
 
-//Removes the socket from the list of active client sockets and closes it
+//Removes the socket from the list of active client sockets and closes it threada
 void removeClient(chatDataVars* data, int clientSocketFd)
 {
-    pthread_mutex_lock(data->clientListMutex);
     for (int i = 0; i < MAX_BUFFER; i++) {
+    pthread_mutex_lock(data->clientListMutex);
+
         if (data->clientSockets[i] == clientSocketFd) {
             data->clientSockets[i] = 0;
             close(clientSocketFd);
             data->numClients--;
-            break;
+            i = MAX_BUFFER;
         }
-    }
     pthread_mutex_unlock(data->clientListMutex);
+
+    }
 }
 
 int registerClient(chatData* info, char* msgBuffer, int clientSocketFd)
@@ -188,7 +192,6 @@ int registerClient(chatData* info, char* msgBuffer, int clientSocketFd)
 
             chatDataVars* vars = ((info->chatBox)[i]);
 
-
             pthread_mutex_lock(vars->clientListMutex);
             if (vars->numClients < MAX_BUFFER) {
                 //Add new client to list
@@ -202,7 +205,7 @@ int registerClient(chatData* info, char* msgBuffer, int clientSocketFd)
                 FD_SET(clientSocketFd, &(vars->serverReadFds));
 
                 //Spawn new thread to handle client's messages
-                clientHandlerVars *chv = (clientHandlerVars*)malloc(sizeof(clientHandlerVars));
+                clientHandlerVars* chv = (clientHandlerVars*)malloc(sizeof(clientHandlerVars));
                 chv->clientSocketFd = clientSocketFd;
                 chv->data = vars;
 
@@ -249,7 +252,7 @@ void* newClientHandler(void* data)
     chatData* info = (chatData*)data;
     char msgBuffer[MAX_BUFFER];
     int a = 1;
-    setsockopt (info->socketFd, SOL_SOCKET, SO_REUSEADDR, &a, sizeof (int));
+    setsockopt(info->socketFd, SOL_SOCKET, SO_REUSEADDR, &a, sizeof(int));
     while (1) {
 
         int clientSocketFd = accept(info->socketFd, NULL, NULL);
@@ -266,13 +269,11 @@ void* newClientHandler(void* data)
                 // pthread_mutex_lock(info->chatBoxListMutex);
                 int numberOfGroups = info->tally;
                 if (numberOfGroups == MAX_CHATBOXES) {
-                    char *msg = "N";
+                    char* msg = "N";
                     write(clientSocketFd, msg, sizeof(msg));
                     fprintf(stderr, "Cant create new group\n");
                     close(clientSocketFd);
                 } else {
-                    char *msg = "Y";
-                    write(clientSocketFd, msg, sizeof(msg));
                     pthread_t roomThread;
                     chatDataVars* vars = (chatDataVars*)malloc(sizeof(chatDataVars));
 
@@ -290,7 +291,7 @@ void* newClientHandler(void* data)
                     info->tally++;
                     if ((pthread_create(&roomThread, NULL, (void*)&roomHandler, (void*)&(*vars))) == 0) {
                         // roomHandler(info);
-                        
+
                         fprintf(stderr, "New Group Created %s\n", msgBuffer);
 
                         registerClient(info, msgBuffer, clientSocketFd);
@@ -300,7 +301,7 @@ void* newClientHandler(void* data)
                 }
                 // pthread_mutex_unlock(info->chatBoxListMutex);
             }
-            // write found non zero 
+            // write found non zero
         }
     }
 }
@@ -344,7 +345,7 @@ void* messageHandler(void* data)
     chatDataVars* chatData = (chatDataVars*)data;
     queue* q = chatData->queue;
     int* clientSockets = chatData->clientSockets;
-    
+
     while (1) {
         //Obtain lock and pop message from queue when not empty
         pthread_mutex_lock(q->mutex);
@@ -357,10 +358,14 @@ void* messageHandler(void* data)
 
         //Broadcast message to all connected clients
         fprintf(stderr, "Broadcasting message: %s\n", msg);
-        for (int i = 0; i < chatData->numClients; i++) {
+        for (int i = 0; i < MAX_BUFFER; i++) {
+            pthread_mutex_lock(chatData->clientListMutex);
             int socket = clientSockets[i];
             if (socket != 0 && write(socket, msg, MAX_BUFFER - 1) == -1)
                 perror("Socket write failed: ");
+            else if(socket != 0)
+                fprintf(stderr, "Broadcasting to %d\n", clientSockets[i]);
+            pthread_mutex_unlock(chatData->clientListMutex);
         }
     }
 }
