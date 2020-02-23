@@ -21,7 +21,7 @@ int main (int argc, char *argv[]) {
     for (int i = 0; i < nclients; ++i) {
         int pid = fork ();
         if (!pid ) {
-            execl ("listener_client", "listener_client", "mahi", "127.0.0.1", "3002", "one", NULL);
+            execl ("listener_client", "listener_client", "mahi", "127.0.0.1", "3004", "one", NULL);
         } else {
             pids.push_back (pid);
         }

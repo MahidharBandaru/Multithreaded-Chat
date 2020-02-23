@@ -21,7 +21,7 @@ static int socketFd;
 pthread_t serverThread, inputThread;
 
 char* name;
-const int tMessage = 100;
+const int tMessage = 50;
 
 //Concatenates the name with the message and puts it into result
 void buildMessage(char* result, char* name, char* msg)
